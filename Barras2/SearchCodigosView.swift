@@ -229,8 +229,7 @@ struct SearchCodigosView: View {
             }
             .sheet(isPresented: $showingDetail) {
                 if let codigo = selectedCodigo {
-                    // CORRECCIÓN: Se elimina el argumento 'scannerActiveBinding' que no existe
-                    // en 'CodigoDetailView' y causaba ambos errores.
+                    // La hoja presenta la vista de detalles con el código guardado
                     CodigoDetailView(
                         codigo: codigo,
                         isNew: false

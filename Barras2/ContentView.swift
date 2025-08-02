@@ -16,7 +16,7 @@ struct ContentView: View {
     
     var body: some View {
         TabView(selection: $selectedTab) {
-            ScannerView()
+            DebugScannerView()
                 .environmentObject(dataManager)
                 .tabItem {
                     Image(systemName: "barcode.viewfinder")

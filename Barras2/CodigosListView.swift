@@ -1,6 +1,6 @@
-// ===================================-
-// 3. CODIGOSLISTVIEW.swift - CON ELIMINACIÓN POR FECHA
-// ===================================-
+// ===================================
+// 3. CODIGOSLISTVIEW.swift - CON LÓGICA PARA COMPARTIR POR DÍA
+// ===================================
 
 import SwiftUI
 
@@ -12,6 +12,11 @@ struct CodigosListView: View {
     @State private var showingDeleteDateAlert = false
     @State private var selectedDateToDelete: Date?
     @State private var refreshID = UUID()
+
+    // NUEVO: Estados para manejar la funcionalidad de compartir
+    @State private var showingShareSheet = false
+    @State private var showingDatePickerSheet = false
+    @State private var shareText = ""
 
     var groupedCodigos: [Date: [CodigoBarras]] {
         let groupedByDate = Dictionary(grouping: dataManager.codigos) { codigo in
@@ -78,21 +83,28 @@ struct CodigosListView: View {
             }
             .id(refreshID)
             .navigationTitle("Códigos (\(dataManager.codigos.count))")
-            // MEJORA: Se usa .toolbar en lugar del obsoleto .navigationBarItems
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                // MODIFICADO: Se añade el botón para compartir
+                ToolbarItemGroup(placement: .navigationBarLeading) {
                     Button("Eliminar Todo") {
                         showingDeleteAllAlert = true
                     }
                     .foregroundColor(.red)
                     .disabled(dataManager.codigos.isEmpty)
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    // NUEVO: Botón para compartir
+                    Button {
+                        showingDatePickerSheet = true
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    .disabled(dataManager.codigos.isEmpty)
+
                     EditButton()
                 }
             }
             .sheet(isPresented: $showingDetail) {
-                // Se llama a la versión corregida del Wrapper
                 CodigoDetailViewWrapper(
                     codigo: selectedCodigo,
                     isNew: false,
@@ -101,6 +113,19 @@ struct CodigosListView: View {
                         refreshID = UUID()
                     }
                 )
+            }
+            // NUEVO: Hoja para presentar el ActivityView (compartir)
+            .sheet(isPresented: $showingShareSheet) {
+                ActivityView(activityItems: [shareText])
+            }
+            // NUEVO: Diálogo para seleccionar la fecha a compartir
+            .confirmationDialog("Seleccionar Fecha para Reporte", isPresented: $showingDatePickerSheet, titleVisibility: .visible) {
+                ForEach(sortedGroupedKeys, id: \.self) { date in
+                    Button(date.formatted(date: .long, time: .omitted)) {
+                        generateShareText(for: date)
+                    }
+                }
+                Button("Cancelar", role: .cancel) {}
             }
             .alert("Eliminar Todos los Códigos", isPresented: $showingDeleteAllAlert) {
                 Button("Cancelar", role: .cancel) {}
@@ -126,6 +151,73 @@ struct CodigosListView: View {
                 }
             }
         }
+    }
+    
+    // NUEVO: Función para generar el texto del reporte diario
+    // NUEVO: Función para generar el texto del reporte diario
+    private func generateShareText(for date: Date) {
+        guard let codigosDelDia = groupedCodigos[date] else {
+            shareText = "No hay códigos para la fecha seleccionada."
+            showingShareSheet = true
+            return
+        }
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .long
+        dateFormatter.locale = Locale(identifier: "es_MX")
+        let fechaTitulo = dateFormatter.string(from: date)
+        
+        var text = "RESUMEN TURNO - \(fechaTitulo.uppercased()) 📊\n"
+       // text += "Total de Códigos: \(codigosDelDia.count)\n\n"
+        
+        // --- 1. EMPACADOS (con detalle de códigos) ---
+        let empacados = codigosDelDia.filter { $0.currentOperacionLog?.operacion == .empaque }
+        if !empacados.isEmpty {
+            text += "✅ EMPACADO (\(empacados.count)):\n"
+            for codigo in empacados {
+                text += "_\(codigo.codigo)_\n"
+            }
+            text += "\n"
+        }
+        
+        // --- 2. AUDITADOS (con detalle de códigos y puntas) ---
+        let auditados = codigosDelDia.filter { $0.auditado && $0.currentOperacionLog?.operacion != .empaque }
+        if !auditados.isEmpty {
+            text += "🅰️ AUDITADO (\(auditados.count)):\n"
+            for codigo in auditados {
+                // MODIFICADO: Se añade el conteo de puntas al lado del código
+                text += "- \(codigo.codigo)"
+                if let puntasContadas = codigo.cantidadPuntas,
+                   let puntasEsperadas = codigo.articulo?.cantidadPuntasEsperadas {
+                    text += "  *\(puntasContadas)/\(puntasEsperadas)*\n"
+                } else {
+                    text += "\n"
+                }
+            }
+            text += "\n"
+        }
+        
+        // --- 3. EN PROCESO (solo sumatoria) ---
+        let enProceso = codigosDelDia.filter { !$0.auditado && $0.currentOperacionLog?.operacion != .empaque }
+        if !enProceso.isEmpty {
+            text += "🔄 EN PROCESO (\(enProceso.count)):\n"
+            let groupedByOperation = Dictionary(grouping: enProceso) { $0.currentOperacionLog?.operacion }
+            
+            // Ordenar para una presentación lógica
+            let sortedOperations = groupedByOperation.keys.compactMap { $0 }.sorted(by: { $0.hashValue < $1.hashValue })
+            
+            for operacion in sortedOperations {
+                if let count = groupedByOperation[operacion]?.count {
+                    text += "_\(operacion.rawValue): \(count)\n"
+                }
+            }
+            text += "\n"
+        }
+        
+        text += "---\nGenerado el \(Date().formatted(date: .abbreviated, time: .shortened))"
+        
+        self.shareText = text
+        self.showingShareSheet = true
     }
     
     private func deleteCodigos(at offsets: IndexSet, for group: [CodigoBarras]) {

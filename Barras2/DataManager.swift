@@ -1,5 +1,5 @@
 // ===================================
-// DATAMANAGER.swift - MEJORADO PARA SWIFTUI CON PERSISTENCIA DE ARTÍCULOS
+// DATAMANAGER.swift - CORREGIDO PARA PERSISTENCIA DE ARTÍCULOS
 // ===================================
 
 import SwiftUI
@@ -8,37 +8,40 @@ import Combine
 class DataManager: ObservableObject {
     @Published var codigos: [CodigoBarras] = [] {
         didSet {
-            saveData()
-            // NUEVO: Forzar actualización de la UI
-            objectWillChange.send()
+            // Solo guardar si no estamos cargando datos
+            if !isLoadingData {
+                saveData()
+                objectWillChange.send()
+            }
         }
     }
     
     @Published var articulos: [Articulo] = [] {
         didSet {
-            saveData()
-            // NUEVO: Forzar actualización de la UI para artículos también
-            objectWillChange.send()
+            // Solo guardar si no estamos cargando datos
+            if !isLoadingData {
+                saveData()
+                objectWillChange.send()
+            }
         }
     }
     
     private let codigosKey = "codigos_guardados"
     private let articulosKey = "articulos_guardados"
+    private var isLoadingData = false // Flag para evitar guardado durante carga
     
     init() {
         loadData()
-        setupDefaultArticulos()
     }
     
     private func setupDefaultArticulos() {
-        // Solo agregar artículos por defecto si no hay ninguno guardado
+        // Solo agregar artículos por defecto si NO hay ninguno guardado
         if articulos.isEmpty {
             articulos = [
                 Articulo(nombre: "Producto A", descripcion: "Descripción del producto A"),
                 Articulo(nombre: "Producto B", descripcion: "Descripción del producto B"),
             ]
-            // Forzar guardado de los artículos por defecto
-            saveData()
+            print("📦 Artículos por defecto creados")
         }
     }
     
@@ -51,7 +54,6 @@ class DataManager: ObservableObject {
             var codigoToUpdate = updatedCodigo
             codigoToUpdate.fechaModificacion = Date()
             
-            // MEJORADO: Usar DispatchQueue.main para asegurar actualización en UI thread
             DispatchQueue.main.async {
                 self.codigos[index] = codigoToUpdate
                 print("🔄 Código actualizado: \(codigoToUpdate.codigo)")
@@ -64,7 +66,6 @@ class DataManager: ObservableObject {
     }
     
     func addArticulo(_ articulo: Articulo) {
-        // MEJORADO: Usar DispatchQueue.main para operaciones de UI
         DispatchQueue.main.async {
             self.articulos.append(articulo)
             print("✅ Artículo agregado: \(articulo.nombre)")
@@ -72,7 +73,6 @@ class DataManager: ObservableObject {
     }
     
     func deleteArticulo(_ articulo: Articulo) {
-        // MEJORADO: Usar DispatchQueue.main para operaciones de UI
         DispatchQueue.main.async {
             self.articulos.removeAll { $0.id == articulo.id }
             print("🗑️ Artículo eliminado: \(articulo.nombre)")
@@ -89,6 +89,12 @@ class DataManager: ObservableObject {
     }
     
     private func saveData() {
+        // No guardar si estamos cargando datos
+        guard !isLoadingData else {
+            print("⏸️ Guardado pausado - cargando datos")
+            return
+        }
+        
         // Guardar códigos
         if let codigosData = try? JSONEncoder().encode(codigos) {
             UserDefaults.standard.set(codigosData, forKey: codigosKey)
@@ -107,6 +113,8 @@ class DataManager: ObservableObject {
     }
     
     private func loadData() {
+        isLoadingData = true // Evitar que didSet guarde durante la carga
+        
         // Cargar códigos
         if let codigosData = UserDefaults.standard.data(forKey: codigosKey),
            let decodedCodigos = try? JSONDecoder().decode([CodigoBarras].self, from: codigosData) {
@@ -122,13 +130,17 @@ class DataManager: ObservableObject {
             articulos = decodedArticulos
             print("📱 Artículos cargados: \(articulos.count)")
         } else {
-            print("📱 No hay artículos guardados o error al cargar")
+            print("📱 No hay artículos guardados, creando artículos por defecto")
+            // SOLO crear artículos por defecto si realmente no hay datos guardados
+            setupDefaultArticulos()
         }
+        
+        isLoadingData = false // Reactivar guardado automático
+        print("🔄 Carga de datos completada - isLoadingData: \(isLoadingData)")
     }
     
     // MARK: - Funciones de utilidad para manejo de datos
     func exportarDatos() -> String? {
-        // Crear una estructura Codable para exportar los datos
         struct DatosExportacion: Codable {
             let codigos: [CodigoBarras]
             let articulos: [Articulo]
@@ -197,7 +209,6 @@ class DataManager: ObservableObject {
             
             updatedCodigo.fechaModificacion = Date()
             
-            // MEJORADO: Usar DispatchQueue.main y forzar actualización
             DispatchQueue.main.async {
                 self.codigos[index] = updatedCodigo
                 self.objectWillChange.send()
@@ -219,12 +230,36 @@ class DataManager: ObservableObject {
             updatedCodigo.auditado = true
             updatedCodigo.fechaModificacion = Date()
             
-            // MEJORADO: Usar DispatchQueue.main y forzar actualización
             DispatchQueue.main.async {
                 self.codigos[index] = updatedCodigo
                 self.objectWillChange.send()
                 print("🔄 Código marcado como auditado: \(codigo.codigo)")
             }
         }
+    }
+    
+    // MARK: - Funciones de debug para verificar persistencia
+    func debugUserDefaults() {
+        print("🔍 Debug UserDefaults:")
+        print("   - Códigos key exists: \(UserDefaults.standard.object(forKey: codigosKey) != nil)")
+        print("   - Artículos key exists: \(UserDefaults.standard.object(forKey: articulosKey) != nil)")
+        
+        if let articulosData = UserDefaults.standard.data(forKey: articulosKey) {
+            print("   - Artículos data size: \(articulosData.count) bytes")
+            if let decoded = try? JSONDecoder().decode([Articulo].self, from: articulosData) {
+                print("   - Artículos decodificados: \(decoded.count)")
+                for articulo in decoded {
+                    print("     * \(articulo.nombre)")
+                }
+            } else {
+                print("   - Error al decodificar artículos")
+            }
+        }
+    }
+    
+    // Función para forzar guardado manual (útil para debug)
+    func forzarGuardado() {
+        saveData()
+        print("💾 Guardado forzado completado")
     }
 }
