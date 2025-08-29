@@ -48,13 +48,6 @@ struct ContentView: View {
                 }
                 .tag(3)
 
-/*            ArticulosView()
-                .environmentObject(dataManager)
-                .tabItem {
-                    Image(systemName: "cube.box")
-                    Text("Artículos")
-                }
-                .tag(4)*/
         }
     }
 }

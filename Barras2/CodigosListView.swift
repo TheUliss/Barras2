@@ -154,7 +154,6 @@ struct CodigosListView: View {
     }
     
     // NUEVO: Función para generar el texto del reporte diario
-    // NUEVO: Función para generar el texto del reporte diario
     private func generateShareText(for date: Date) {
         guard let codigosDelDia = groupedCodigos[date] else {
             shareText = "No hay códigos para la fecha seleccionada."

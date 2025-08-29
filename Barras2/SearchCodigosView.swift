@@ -300,12 +300,12 @@ struct SearchResultRow: View {
     let searchText: String
     
     // Formateador para mostrar duraciones de tiempo
-    private var timeFormatter: DateComponentsFormatter {
-        let formatter = DateComponentsFormatter()
-        formatter.allowedUnits = [.hour, .minute]
-        formatter.unitsStyle = .abbreviated
-        return formatter
-    }
+    private static let timeFormatter: DateComponentsFormatter = {
+            let formatter = DateComponentsFormatter()
+            formatter.allowedUnits = [.hour, .minute]
+            formatter.unitsStyle = .abbreviated
+            return formatter
+        }()
     
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -377,20 +377,21 @@ struct SearchResultRow: View {
                 
                 // Tiempo transcurrido si hay operación anterior
                 if let previousLog = codigo.previousOperacionLog {
-                    let interval = currentLog.timestamp.timeIntervalSince(previousLog.timestamp)
-                    if let timeString = timeFormatter.string(from: interval) {
-                        HStack {
-                            Label("Duración", systemImage: "timer")
-                                .font(.caption2)
-                                .foregroundColor(.blue)
-                            
-                            Text(timeString)
-                                .font(.caption)
-                                .fontWeight(.bold)
-                                .foregroundColor(.blue)
+                        let interval = currentLog.timestamp.timeIntervalSince(previousLog.timestamp)
+                        // Usamos la propiedad estática
+                        if let timeString = SearchResultRow.timeFormatter.string(from: interval) {
+                            HStack {
+                                Label("Duración", systemImage: "timer")
+                                    .font(.caption2)
+                                    .foregroundColor(.blue)
+                                
+                                Text(timeString)
+                                    .font(.caption)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.blue)
+                            }
                         }
                     }
-                }
             } else {
                 Label("Sin operación asignada", systemImage: "exclamationmark.circle")
                     .font(.caption)

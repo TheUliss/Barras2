@@ -352,7 +352,7 @@ struct ScannerDebugPanel: View {
                 }
                 
                 // Consejos de troubleshooting
-                troubleshootingTips
+               // troubleshootingTips
             }
         }
         .padding(16)
