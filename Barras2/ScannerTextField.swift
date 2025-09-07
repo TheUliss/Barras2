@@ -310,81 +310,6 @@ struct DebugScannerTextField: UIViewRepresentable {
     }
 }
 
-// MARK: - Debug Panel View
-struct ScannerDebugPanel: View {
-    @ObservedObject var scannerManager: DebugScannerManager
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("🐛 Debug Panel")
-                    .font(.headline)
-                    .fontWeight(.bold)
-                
-                Spacer()
-                
-                Toggle("Debug", isOn: $scannerManager.debugMode)
-                    .toggleStyle(SwitchToggleStyle(tint: .orange))
-            }
-            
-            if scannerManager.debugMode {
-                if let debugInfo = scannerManager.lastScanDebugInfo {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Último Escaneo:")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                        
-                        DebugInfoRow(title: "Hora", value: debugInfo.timestamp.formatted(date: .omitted, time: .standard))
-                        DebugInfoRow(title: "Input Raw", value: debugInfo.rawInput)
-                        DebugInfoRow(title: "Procesado", value: debugInfo.processedInput)
-                        DebugInfoRow(title: "Longitud", value: "\(debugInfo.inputLength) caracteres")
-                        DebugInfoRow(title: "Terminador", value: debugInfo.terminatorFound ?? "N/A")
-                        DebugInfoRow(title: "Tiempo", value: String(format: "%.3f ms", debugInfo.processingTime * 1000))
-                    }
-                    .padding(12)
-                    .background(Color.orange.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                } else {
-                    Text("Sin información de debug disponible")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .italic()
-                }
-                
-                // Consejos de troubleshooting
-               // troubleshootingTips
-            }
-        }
-        .padding(16)
-        .background(Color(UIColor.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.orange.opacity(0.3), lineWidth: 1)
-        )
-    }
-    
-    private var troubleshootingTips: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("💡 Consejos de Troubleshooting:")
-                .font(.subheadline)
-                .fontWeight(.semibold)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text("• Si los códigos están incompletos, verifica la configuración del escáner")
-                Text("• Asegúrate de que el terminador sea TAB (\\t)")
-                Text("• Algunos escáneres necesitan un delay post-scan")
-                Text("• Verifica que no haya caracteres especiales extra")
-                Text("• En modo híbrido, el sistema detecta automáticamente")
-            }
-            .font(.caption)
-            .foregroundColor(.secondary)
-        }
-        .padding(8)
-        .background(Color.blue.opacity(0.05))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-    }
-}
 
 struct DebugInfoRow: View {
     let title: String
@@ -444,7 +369,7 @@ struct DebugScannerView: View {
                         headerSection
                         
                         // Debug Panel (siempre visible para troubleshooting)
-                        ScannerDebugPanel(scannerManager: scannerManager)
+                  //      ScannerDebugPanel(scannerManager: scannerManager)
                         
                         modeToggleSection
                         
@@ -1084,12 +1009,17 @@ struct CodigoDetailView: View {
     @State var codigo: CodigoBarras
     let isNew: Bool
 
+    // --- Estados para los controles de la UI ---
     @State private var selectedArticulo: Articulo?
     @State private var selectedOperacion: Operacion?
     @State private var auditado = false
     @State private var cantidadPuntas = ""
     @State private var fechaEmbarque = Date()
     @State private var usarFechaEmbarque = false
+    
+    // NUEVO: Estado para el toggle de "Empacado"
+    @State private var esEmpacado = false
+    
     @FocusState private var isPuntasTextFieldFocused: Bool
 
     init(codigo: CodigoBarras, isNew: Bool = false, onSave: ((CodigoBarras) -> Void)? = nil) {
@@ -1097,12 +1027,17 @@ struct CodigoDetailView: View {
         self.isNew = isNew
         self.onSave = onSave
           
+        // Inicialización de estados
         self._selectedArticulo = State(initialValue: codigo.articulo)
-        self._selectedOperacion = State(initialValue: codigo.currentOperacionLog?.operacion)
+        let initialOperation = codigo.currentOperacionLog?.operacion
+        self._selectedOperacion = State(initialValue: initialOperation)
         self._auditado = State(initialValue: codigo.auditado)
         self._cantidadPuntas = State(initialValue: codigo.cantidadPuntas?.description ?? "")
         self._fechaEmbarque = State(initialValue: codigo.fechaEmbarque ?? Date())
         self._usarFechaEmbarque = State(initialValue: codigo.fechaEmbarque != nil)
+        
+        // NUEVO: Inicializar el estado de "Empacado"
+        self._esEmpacado = State(initialValue: initialOperation == .empaque)
     }
       
     var body: some View {
@@ -1110,8 +1045,7 @@ struct CodigoDetailView: View {
             Form {
                 CodigoInfoSection(codigo: codigo)
                   
-                // CORRECCIÓN: Se llama a CodigoDetailsSection en lugar de a CodigoDetailView.
-                // Esto elimina la recursividad infinita que causaba el error.
+                // Se pasa el nuevo binding a la sección de detalles
                 CodigoDetailsSection(
                     dataManager: dataManager,
                     codigo: codigo,
@@ -1119,6 +1053,8 @@ struct CodigoDetailView: View {
                     selectedArticulo: $selectedArticulo,
                     selectedOperacion: $selectedOperacion,
                     auditado: $auditado,
+                    // NUEVO
+                    esEmpacado: $esEmpacado,
                     cantidadPuntas: $cantidadPuntas,
                     fechaEmbarque: $fechaEmbarque,
                     usarFechaEmbarque: $usarFechaEmbarque,
@@ -1145,19 +1081,35 @@ struct CodigoDetailView: View {
         }
     }
       
+    // Lógica de guardado actualizada
     private func saveChanges() {
         var updatedCodigo = codigo
         updatedCodigo.articulo = selectedArticulo
-        updatedCodigo.auditado = auditado
-        updatedCodigo.cantidadPuntas = auditado ? Int(cantidadPuntas) : nil
-        updatedCodigo.fechaEmbarque = usarFechaEmbarque ? fechaEmbarque : nil
-          
-        if let newOperation = selectedOperacion {
-            if newOperation != updatedCodigo.currentOperacionLog?.operacion {
-                let newLogEntry = OperacionLog(operacion: newOperation, timestamp: Date())
+        
+        // La lógica ahora depende de si se marcó como empacado
+        if esEmpacado {
+            updatedCodigo.auditado = false // Un código empacado no está "auditándose"
+            updatedCodigo.cantidadPuntas = nil // No aplica para empaque
+            
+            // Si la operación actual no era Empaque, se agrega un nuevo log
+            if updatedCodigo.currentOperacionLog?.operacion != .empaque {
+                let newLogEntry = OperacionLog(operacion: .empaque, timestamp: Date())
                 updatedCodigo.operacionHistory.append(newLogEntry)
             }
+        } else {
+            updatedCodigo.auditado = auditado
+            updatedCodigo.cantidadPuntas = auditado ? Int(cantidadPuntas) : nil
+            
+            // Si se seleccionó una nueva operación (que no es empaque)
+            if let newOperation = selectedOperacion, newOperation != .empaque {
+                if newOperation != updatedCodigo.currentOperacionLog?.operacion {
+                    let newLogEntry = OperacionLog(operacion: newOperation, timestamp: Date())
+                    updatedCodigo.operacionHistory.append(newLogEntry)
+                }
+            }
         }
+        
+        updatedCodigo.fechaEmbarque = usarFechaEmbarque ? fechaEmbarque : nil
           
         onSave?(updatedCodigo)
         dismiss()
@@ -1204,10 +1156,10 @@ struct CodigoInfoSection: View {
           }
           
           if puntasContadas == esperadas {
-              return ("checkmark.circle.fill", "Cantidad completa", .green)
+              return ("checkmark.circle.fill", "Completado", .green)
           } else if puntasContadas < esperadas {
               let faltantes = esperadas - puntasContadas
-              return ("exclamationmark.triangle.fill", "Auditadas OK \(faltantes)", .orange)
+              return ("exclamationmark.triangle.fill", "Faltantes \(faltantes)", .orange)
           } else {
               let exceso = puntasContadas - esperadas
               return ("xmark.circle.fill", "Exceso de \(exceso)", .red)
@@ -1321,7 +1273,7 @@ struct PuntasFaltantesView: View {
                               Button(action: { adjustPuntas(by: -1) }) { Image(systemName: "minus.circle.fill") }
                                   .foregroundColor(.red)
                               
-                              TextField("Puntas", text: $cantidadPuntas)
+                              TextField("Auditadas", text: $cantidadPuntas)
                                   .keyboardType(.numberPad)
                                   .multilineTextAlignment(.center)
                                   .focused(isPuntasTextFieldFocused)
@@ -1376,34 +1328,48 @@ struct CodigoDetailsSection: View {
     @Binding var selectedArticulo: Articulo?
     @Binding var selectedOperacion: Operacion?
     @Binding var auditado: Bool
+    
+    // NUEVO: Binding para el estado de "Empacado"
+    @Binding var esEmpacado: Bool
+    
     @Binding var cantidadPuntas: String
     @Binding var fechaEmbarque: Date
     @Binding var usarFechaEmbarque: Bool
     
-    // CORRECCIÓN: La sintaxis correcta para recibir el binding de un @FocusState.
     var isPuntasTextFieldFocused: FocusState<Bool>.Binding
     @Binding var scannerActive: Bool
     
+    // Lógica de control para deshabilitar controles
     private var isAuditadoToggleDisabled: Bool {
-        return selectedOperacion == .empaque
+        // Se deshabilita si está marcado como empacado
+        return esEmpacado || selectedOperacion == .empaque
+    }
+    
+    private var isOperationPickerDisabled: Bool {
+        // El picker de operación se deshabilita si está marcado como empacado
+        return esEmpacado
     }
     
     var body: some View {
-        // CORRECCIÓN: Se usa un Group para que el body devuelva una sola vista raíz.
         Group {
             Section(header: Text("Detalles")) {
                 ArticuloPicker(dataManager: dataManager, selectedArticulo: $selectedArticulo)
+                
+                // NUEVO: Toggle para marcar como Empacado
+                Toggle("Finalizado (Empacado)", isOn: $esEmpacado.animation())
+                
+                // El picker y el toggle de auditado se deshabilitan si se marca como empacado
                 OperacionPicker(selectedOperacion: $selectedOperacion)
+                    .disabled(isOperationPickerDisabled)
                 
                 if !isNew, let previousLog = codigo.currentOperacionLog {
                     OperacionAnteriorView(previousLog: previousLog)
                 }
                 
-                Toggle("Auditado", isOn: $auditado)
+                Toggle("Auditado", isOn: $auditado.animation())
                     .disabled(isAuditadoToggleDisabled)
                 
-                if auditado {
-                    // MEJORA: Se utiliza la vista con progreso y se elimina la versión simple.
+                if auditado && !esEmpacado {
                     CantidadPuntasViewWithProgress(
                         cantidadPuntas: $cantidadPuntas,
                         isPuntasTextFieldFocused: isPuntasTextFieldFocused,
@@ -1414,13 +1380,27 @@ struct CodigoDetailsSection: View {
                 
                 FechaEmbarqueView(usarFechaEmbarque: $usarFechaEmbarque, fechaEmbarque: $fechaEmbarque)
             }
-            .onChange(of: selectedOperacion) { _, newOperation in
-                if newOperation == .empaque {
+            // Lógica que se ejecuta cuando cambian los toggles
+            .onChange(of: esEmpacado) { _, newValue in
+                if newValue {
+                    // Si se marca como empacado, se desmarca 'auditado' y se limpia la operación
                     auditado = false
+                    selectedOperacion = .empaque
+                } else {
+                    // Si se desmarca, se quita la operación de empaque para poder seleccionar otra
+                    if selectedOperacion == .empaque {
+                        selectedOperacion = nil
+                    }
+                }
+            }
+            .onChange(of: auditado) { _, newValue in
+                if newValue {
+                    // Si se marca como auditado, nos aseguramos de que no esté marcado como empacado
+                    esEmpacado = false
                 }
             }
 
-            if isAuditadoToggleDisabled {
+            if isAuditadoToggleDisabled && !esEmpacado {
                 Text("Auditado no aplica para la operación de 'Empaque'.")
                     .font(.caption)
                     .foregroundColor(.secondary)

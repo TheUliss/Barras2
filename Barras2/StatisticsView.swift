@@ -395,10 +395,10 @@ struct StatisticsView: View {
           // 3. Listar el detalle de los códigos de esa fecha
           text += "# DETALLE DE CÓDIGOS:\n"
           for codigo in codigosDelDia.sorted(by: { $0.codigo < $1.codigo }) { // Ordenar por código
-              text += "- *\(codigo.codigo)*\n"
+              text += "- *\(codigo.codigo)*"
               if let operacion = codigo.currentOperacionLog?.operacion {
                   if operacion == .empaque {
-                      text += "  ✅ Empaque"
+                      text += " | ✅ Empaque"
                   } else {
                       text += "  _\(operacion.rawValue)_"
                   }
@@ -411,7 +411,7 @@ struct StatisticsView: View {
               }
               
               if let puntas = codigo.cantidadPuntas {
-                  text += " | *\(puntas)* puntas"
+                  text += " | *\(puntas)* pts"
               }
                           
               text += "\n"
@@ -425,75 +425,6 @@ struct StatisticsView: View {
           shareText = text
       }
 }
- /*   private func generateShareText() {
-        print("🔄 Iniciando generación de texto para compartir...")
-        
-        guard !dataManager.codigos.isEmpty else {
-            print("❌ No hay códigos para generar texto")
-            shareText = ""
-            return
-        }
-        
-        var text = "= RESUMEN JOBS =\n\n"
-        
-        text += "Total Jobs: \(dataManager.codigos.count)\n"
-        text += "Auditados: \(dataManager.codigos.filter { $0.auditado }.count)\n"
-        text += "Progreso: \(progressPercentage)\n\n"
-        
-        // Por operación con orden específico
-        text += "# POR OPERACIÓN (FLUJO DE TRABAJO):\n"
-        for (index, (operacion, cantidad)) in codigosPorOperacionOrdenados.enumerated() {
-            text += "\(index + 1). \(operacion.rawValue): \(cantidad)\n"
-        }
-        text += "\n"
-        
-        // Por artículo
-        text += "# ARTÍCULOS:\n"
-        for (articulo, cantidad) in codigosPorArticuloOrdenados {
-            text += "\(articulo): \(cantidad)\n"
-        }
-        text += "\n"
-    
-        // Listado detallado de códigos
-        text += "# DETALLE DE CÓDIGOS:\n"
-        for codigo in codigosOrdenados {
-            text += "- *\(codigo.codigo)*\n"
-            if let operacion = codigo.currentOperacionLog?.operacion {
-                if operacion == .empaque {
-                    text += "  ✅Empaque"
-                } else {
-                    text += "  _\(operacion.rawValue)_"
-                }
-            } else {
-                text += "  Sin operación"
-            }
-
-            if codigo.auditado {
-                text += " | 🅰️uditado"
-            }
-            
-            if let puntas = codigo.cantidadPuntas {
-                text += " | Puntas: *\(puntas)*"
-            }
-            
-            if let articulo = codigo.articulo?.nombre {
-                text += " | \(articulo)"
-            }
-            
-            text += "\n"
-        }
-        
-        // Información adicional
-        text += "\n---\n"
-        let fechaFormateada = DateFormatter.shortDateTime.string(from: Date())
-        text += "Generado: \(fechaFormateada)\n"
-
-        shareText = text
-        
-        print("✅ Texto generado. Longitud: \(text.count) caracteres")
-        print("📝 Primeros 100 caracteres: \(String(text.prefix(100)))")
-    }
-}*/
 
 // MARK: - Extension para DateFormatter (SIN CAMBIOS)
 extension DateFormatter {

@@ -6,6 +6,8 @@ import SwiftUI
 
 struct CodigosListView: View {
     @EnvironmentObject var dataManager: DataManager
+        // Accedemos al nuevo manager
+    @EnvironmentObject var settingsManager: SettingsManager
     @State private var selectedCodigo: CodigoBarras?
     @State private var showingDetail = false
     @State private var showingDeleteAllAlert = false
@@ -16,7 +18,11 @@ struct CodigosListView: View {
     // NUEVO: Estados para manejar la funcionalidad de compartir
     @State private var showingShareSheet = false
     @State private var showingDatePickerSheet = false
+    @State private var showingActionSheet = false
     @State private var shareText = ""
+    
+    @State private var activityItems: [Any] = [] // Puede contener texto o datos de PDF
+    @State private var selectedDateForAction: Date?
 
     var groupedCodigos: [Date: [CodigoBarras]] {
         let groupedByDate = Dictionary(grouping: dataManager.codigos) { codigo in
@@ -93,15 +99,15 @@ struct CodigosListView: View {
                     .disabled(dataManager.codigos.isEmpty)
                 }
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    // NUEVO: Botón para compartir
-                    Button {
-                        showingDatePickerSheet = true
-                    } label: {
-                        Image(systemName: "square.and.arrow.up")
-                    }
-                    .disabled(dataManager.codigos.isEmpty)
+                                    Button {
+                                        // MODIFICADO: Esto ahora abre el selector de fechas
+                                        showingActionSheet = true
+                                    } label: {
+                                        Image(systemName: "square.and.arrow.up")
+                                    }
+                                    .disabled(dataManager.codigos.isEmpty)
 
-                    EditButton()
+                                    EditButton()
                 }
             }
             .sheet(isPresented: $showingDetail) {
@@ -116,17 +122,35 @@ struct CodigosListView: View {
             }
             // NUEVO: Hoja para presentar el ActivityView (compartir)
             .sheet(isPresented: $showingShareSheet) {
-                ActivityView(activityItems: [shareText])
-            }
-            // NUEVO: Diálogo para seleccionar la fecha a compartir
-            .confirmationDialog("Seleccionar Fecha para Reporte", isPresented: $showingDatePickerSheet, titleVisibility: .visible) {
-                ForEach(sortedGroupedKeys, id: \.self) { date in
-                    Button(date.formatted(date: .long, time: .omitted)) {
-                        generateShareText(for: date)
-                    }
-                }
-                Button("Cancelar", role: .cancel) {}
-            }
+                            ActivityView(activityItems: activityItems)
+                        }
+            // MODIFICADO: Este diálogo ahora te permite elegir la fecha
+                        .confirmationDialog("Seleccionar Fecha para Reporte", isPresented: $showingActionSheet, titleVisibility: .visible) {
+                            ForEach(sortedGroupedKeys, id: \.self) { date in
+                                Button(date.formatted(date: .long, time: .omitted)) {
+                                    selectedDateForAction = date
+                                    // Aquí podríamos abrir otro menú o realizar una acción directa
+                                    // Para este ejemplo, vamos a generar ambos y que el usuario elija
+                                    // en el siguiente paso. Por simplicidad, lo haremos directo.
+                                    // Lo ideal es presentar un segundo menú aquí.
+                                }
+                            }
+                            Button("Cancelar", role: .cancel) {}
+                        }
+                                    // NUEVO: Un segundo confirmationDialog para elegir el tipo de reporte
+                                    .confirmationDialog("¿Qué tipo de reporte deseas generar?", isPresented: .constant(selectedDateForAction != nil), titleVisibility: .visible) {
+                                        Button("Resumen Rápido (Texto)") {
+                                            generateShareText(for: selectedDateForAction!)
+                                            selectedDateForAction = nil // Reset
+                                        }
+                                        Button("Reporte Completo (PDF)") {
+                                            generatePDFReport(for: selectedDateForAction!)
+                                            selectedDateForAction = nil // Reset
+                                        }
+                                        Button("Cancelar", role: .cancel) {
+                                            selectedDateForAction = nil // Reset
+                                        }
+                                    }
             .alert("Eliminar Todos los Códigos", isPresented: $showingDeleteAllAlert) {
                 Button("Cancelar", role: .cancel) {}
                 Button("Eliminar Todo", role: .destructive) {
@@ -152,6 +176,25 @@ struct CodigosListView: View {
             }
         }
     }
+    
+    @MainActor
+        private func generatePDFReport(for date: Date) {
+            guard let codigosDelDia = groupedCodigos[date] else { return }
+            
+            // MODIFICADO: Pasamos los datos del settingsManager al generador
+            if let pdfData = PDFGenerator.render(
+                codigos: codigosDelDia,
+                date: date,
+                settings: settingsManager // Pasamos el manager completo
+            ) {
+                let fileName = "Reporte-\(date.formatted(.iso8601.year().month().day())).pdf"
+                let temporaryURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+                try? pdfData.write(to: temporaryURL)
+                
+                self.activityItems = [temporaryURL]
+                self.showingShareSheet = true
+            }
+        }
     
     // NUEVO: Función para generar el texto del reporte diario
     private func generateShareText(for date: Date) {
@@ -215,6 +258,7 @@ struct CodigosListView: View {
         
         text += "---\nGenerado el \(Date().formatted(date: .abbreviated, time: .shortened))"
         
+        self.activityItems = [text] // `text` es el String que generaste
         self.shareText = text
         self.showingShareSheet = true
     }

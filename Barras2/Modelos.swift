@@ -55,15 +55,15 @@ struct Articulo: Identifiable, Codable, Hashable {
 }
 
 enum Operacion: String, CaseIterable, Codable {
-    case ribonizado = "Ribonizado"
-    case ensamble = "Ensamble"
-    case pulido = "Pulido"
-    case limpGeo = "Limp/Geo"
-    case armado = "Armado"
-    case etiquetas = "Etiquetas"
-    case polaridad = "Polaridad"
-    case prueba = "Prueba"
-    case limpieza = "Limpieza"
+        case ribonizado = "Ribonizado"
+        case ensamble = "Ensamble"
+        case pulido = "Pulido"
+        case limpGeo = "Limp/Geo"
+        case armado = "Armado"
+        case etiquetas = "Etiquetas"
+        case polaridad = "Polaridad"
+        case prueba = "Prueba"
+        case limpieza = "Limp|QA"
     case empaque = "Empaque"
 }
 

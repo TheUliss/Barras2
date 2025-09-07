@@ -1,3 +1,11 @@
+//
+//  SettingsManager.swift
+//  Barras2
+//
+//  Created by Ulises Islas on 06/09/25.
+//
+
+
 import SwiftUI
 import Combine
 

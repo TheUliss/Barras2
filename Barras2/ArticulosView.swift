@@ -7,6 +7,7 @@
 import SwiftUI
 import AVFoundation
 import Combine
+import PhotosUI
 
 // MARK: - Articulos View Mejorada
 struct ArticulosView: View {
@@ -22,17 +23,29 @@ struct ArticulosView: View {
     
     var body: some View {
         NavigationView {
-            VStack {
-                // Estadísticas rápidas
-                if !dataManager.articulos.isEmpty {
-                    estadisticasView
-                }
-                
-                // Lista de artículos
-                articulosListView
+            Form {
+            // NUEVA SECCIÓN: Configuración de Reportes
+            Section(header: Text("Configuración de Reportes")) {
+                ReportSettingsView() // Extraemos la nueva UI a su propia vista
             }
-            .navigationTitle("Artículos")
-            // CORRECCIÓN: Se usa .toolbar en lugar del obsoleto .navigationBarItems
+
+            // SECCIÓN EXISTENTE: Lista de Artículos
+            Section(header: Text("Artículos")) {
+                // La lista ahora va dentro de la sección del Form
+                ForEach(dataManager.articulos) { articulo in
+                    ArticuloRow(
+                        articulo: articulo,
+                        onEdit: { editArticulo(articulo) },
+                        onDelete: {
+                            articuloToDelete = articulo
+                            showingDeleteAlert = true
+                        }
+                    )
+                }
+                .onDelete(perform: deleteArticulos)
+            }
+            }
+            .navigationTitle("Artículos y Config.")
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     if !dataManager.articulos.isEmpty {
@@ -69,7 +82,7 @@ struct ArticulosView: View {
     }
     
     // MARK: - Subvistas
-    private var estadisticasView: some View {
+  /*  private var estadisticasView: some View {
         HStack {
             VStack {
                 Text("\(dataManager.articulos.count)")
@@ -117,6 +130,64 @@ struct ArticulosView: View {
             .onDelete(perform: deleteArticulos)
         }
         .listStyle(PlainListStyle())
+    }*/
+    
+    // NUEVA VISTA: Contiene la UI para la configuración
+    struct ReportSettingsView: View {
+        // Accedemos al SettingsManager desde el entorno
+        @EnvironmentObject var settingsManager: SettingsManager
+        
+        @State private var selectedPhoto: PhotosPickerItem?
+        
+        var body: some View {
+            HStack {
+                // Selector de Logo
+                PhotosPicker(selection: $selectedPhoto, matching: .images, photoLibrary: .shared()) {
+                    VStack {
+                        if let logoImage = settingsManager.getLogoImage() {
+                            logoImage
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 60, height: 60)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        } else {
+                            Image(systemName: "photo.badge.plus")
+                                .font(.largeTitle)
+                                .frame(width: 60, height: 60)
+                                .background(Color.secondary.opacity(0.1))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        Text("Logo")
+                            .font(.caption)
+                    }
+                }
+                .buttonStyle(.plain)
+                .onChange(of: selectedPhoto) {_, newItem in
+                    Task {
+                        // Convertir la foto seleccionada a Data y guardarla
+                        if let data = try? await newItem?.loadTransferable(type: Data.self) {
+                            settingsManager.logoImageData = data
+                        }
+                    }
+                }
+
+                Divider().padding(.horizontal, 5)
+
+                // Campos de Turno y Realizador
+                VStack(alignment: .leading, spacing: 10) {
+                    TextField("Realizado por...", text: $settingsManager.nombreRealizador)
+                        .textFieldStyle(.roundedBorder)
+
+                    Picker("Turno:", selection: $settingsManager.turnoSeleccionado) {
+                        ForEach(settingsManager.turnos, id: \.self) { turno in
+                            Text(turno).tag(turno)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+            }
+            .padding(.vertical, 8)
+        }
     }
     
     private var addArticuloSheet: some View {
