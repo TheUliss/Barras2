@@ -36,6 +36,27 @@ struct CodigoBarras: Identifiable, Codable, Hashable {
         self.fechaCreacion = Date()
     }
     
+    // NUEVO: Inicializador completo para permitir modificar fechaCreacion
+        init(id: UUID = UUID(),
+             codigo: String,
+             fechaCreacion: Date,
+             articulo: Articulo? = nil,
+             auditado: Bool = false,
+             cantidadPuntas: Int? = nil,
+             fechaEmbarque: Date? = nil,
+             fechaModificacion: Date? = nil,
+             operacionHistory: [OperacionLog] = []) {
+            self.id = id
+            self.codigo = codigo
+            self.fechaCreacion = fechaCreacion
+            self.articulo = articulo
+            self.auditado = auditado
+            self.cantidadPuntas = cantidadPuntas
+            self.fechaEmbarque = fechaEmbarque
+            self.fechaModificacion = fechaModificacion
+            self.operacionHistory = operacionHistory
+        }
+    
     static func == (lhs: CodigoBarras, rhs: CodigoBarras) -> Bool {
         lhs.codigo == rhs.codigo
     }
@@ -72,6 +93,24 @@ struct OperacionLog: Identifiable, Codable, Hashable {
     var operacion: Operacion
     var timestamp: Date
 }
+
+
+/*// Agrega esto en tu struct ReportPageData o en el mismo archivo
+struct OperationChartData: Identifiable {
+    let id = UUID()
+    let operacion: String
+    let count: Int
+    let status: String // "Auditado" o "No Auditado"
+    
+    // Inicializador conveniente
+    init(operacion: String, count: Int, status: String) {
+        self.operacion = operacion
+        self.count = count
+        self.status = status
+    }
+}*/
+// Agrega esto al principio del archivo, antes de struct ReportPageData
+
 
 // MARK: - Extensiones para CodigoBarras
 extension CodigoBarras {
@@ -134,4 +173,7 @@ extension CodigoBarras {
             return .red
         }
     }
+    
+   
 }
+

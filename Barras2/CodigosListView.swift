@@ -1,5 +1,5 @@
 // ===================================
-// 3. CODIGOSLISTVIEW.swift - CON LÓGICA PARA COMPARTIR POR DÍA
+// 3. CODIGOSLISTVIEW.swift - CON LÓGICA PARA COMPARTIR POR DÍA Y CAMBIAR FECHAS
 // ===================================
 
 import SwiftUI
@@ -23,6 +23,11 @@ struct CodigosListView: View {
     
     @State private var activityItems: [Any] = [] // Puede contener texto o datos de PDF
     @State private var selectedDateForAction: Date?
+
+    // NUEVO: Estados para cambiar fecha de creación
+    @State private var showingChangeDateSheet = false
+    @State private var codigoToChangeDate: CodigoBarras?
+    @State private var newDateForCodigo = Date()
 
     var groupedCodigos: [Date: [CodigoBarras]] {
         let groupedByDate = Dictionary(grouping: dataManager.codigos) { codigo in
@@ -57,6 +62,29 @@ struct CodigosListView: View {
                                 }
                                 .onLongPressGesture {
                                     UIPasteboard.general.string = codigo.codigo
+                                }
+                                // NUEVO: Menú contextual para cambiar fecha
+                                .contextMenu {
+                                    Button(action: {
+                                        selectedCodigo = codigo
+                                        showingDetail = true
+                                    }) {
+                                        Label("Ver Detalles", systemImage: "info.circle")
+                                    }
+                                    
+                                    Button(action: {
+                                        UIPasteboard.general.string = codigo.codigo
+                                    }) {
+                                        Label("Copiar Código", systemImage: "doc.on.doc")
+                                    }
+                                    
+                                    Button(action: {
+                                        codigoToChangeDate = codigo
+                                        newDateForCodigo = codigo.fechaCreacion
+                                        showingChangeDateSheet = true
+                                    }) {
+                                        Label("Cambiar Fecha", systemImage: "calendar")
+                                    }
                                 }
                             }
                             .onDelete { offsets in
@@ -124,6 +152,57 @@ struct CodigosListView: View {
             .sheet(isPresented: $showingShareSheet) {
                             ActivityView(activityItems: activityItems)
                         }
+            // NUEVO: Hoja para cambiar la fecha de creación
+            .sheet(isPresented: $showingChangeDateSheet) {
+                NavigationView {
+                    VStack(spacing: 20) {
+                        if let codigo = codigoToChangeDate {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("Cambiar Fecha de Creación")
+                                    .font(.title2)
+                                    .fontWeight(.bold)
+                                
+                                Text("Código: \(codigo.codigo)")
+                                    .font(.headline)
+                                    .foregroundColor(.blue)
+                                
+                                Text("Fecha actual: \(codigo.fechaCreacion, style: .date)")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding()
+                            .background(Color(.systemGray6))
+                            .cornerRadius(10)
+                        }
+                        
+                        DatePicker(
+                            "Nueva fecha",
+                            selection: $newDateForCodigo,
+                            displayedComponents: [.date]
+                        )
+                        .datePickerStyle(GraphicalDatePickerStyle())
+                        
+                        Spacer()
+                    }
+                    .padding()
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarLeading) {
+                            Button("Cancelar") {
+                                showingChangeDateSheet = false
+                                codigoToChangeDate = nil
+                            }
+                        }
+                        
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button("Guardar") {
+                                changeDateForCodigo()
+                            }
+                            .fontWeight(.semibold)
+                        }
+                    }
+                }
+            }
             // MODIFICADO: Este diálogo ahora te permite elegir la fecha
                         .confirmationDialog("Seleccionar Fecha para Reporte", isPresented: $showingActionSheet, titleVisibility: .visible) {
                             ForEach(sortedGroupedKeys, id: \.self) { date in
@@ -175,6 +254,37 @@ struct CodigosListView: View {
                 }
             }
         }
+    }
+    
+    // NUEVO: Función para cambiar la fecha de un código
+    private func changeDateForCodigo() {
+        guard let codigo = codigoToChangeDate else { return }
+        
+        // Crear una nueva instancia del código con la fecha modificada
+        let updatedCodigo = CodigoBarras(
+            id: codigo.id,
+            codigo: codigo.codigo,
+            fechaCreacion: Calendar.current.startOfDay(for: newDateForCodigo),
+            articulo: codigo.articulo,
+            auditado: codigo.auditado,
+            cantidadPuntas: codigo.cantidadPuntas,
+            fechaEmbarque: codigo.fechaEmbarque,
+            fechaModificacion: Date(), // Actualizamos la fecha de modificación
+            operacionHistory: codigo.operacionHistory
+        )
+        
+        // Actualizar en el DataManager
+        dataManager.updateCodigo(updatedCodigo)
+        
+        // Refrescar la vista
+        refreshID = UUID()
+        
+        // Cerrar el sheet y limpiar
+        showingChangeDateSheet = false
+        codigoToChangeDate = nil
+        
+        // Opcional: Mostrar confirmación
+        // Aquí podrías agregar un toast o mensaje de confirmación
     }
     
     @MainActor
@@ -298,6 +408,13 @@ struct CodigoRowView: View {
                 Text(codigo.codigo)
                     .fontWeight(.bold)
                 Spacer()
+                
+                // NUEVO: Indicador visual si la fecha fue modificada
+                if !Calendar.current.isDate(codigo.fechaCreacion, inSameDayAs: Date()) {
+                    Image(systemName: "calendar.badge.clock")
+                        .foregroundColor(.orange)
+                        .font(.caption)
+                }
                 
                 if let currentLog = codigo.currentOperacionLog,
                    currentLog.operacion.rawValue.lowercased() == "empaque" {

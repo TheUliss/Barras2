@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 
+
 struct ReportPageData {
     // Info de la página
     let pageNumber: Int
@@ -20,6 +21,7 @@ struct ReportPageData {
     let totalAuditadosDelDia: Int
     let totalEmpacadosDelDia: Int
     let operationsDataDelDia: [(operacion: String, count: Int)]
+    
 }
 
 struct ReportPaginator {
@@ -29,7 +31,7 @@ struct ReportPaginator {
         
         // Capacidades más realistas basadas en espacio disponible
         let firstPageAvailableLines = 50  // Líneas disponibles en primera página
-        let subsequentPageAvailableLines = 55  // Líneas disponibles en páginas siguientes
+        let subsequentPageAvailableLines = 50  // Líneas disponibles en páginas siguientes
         
         var pages: [ReportPageData] = []
         var remainingPackaged = empacados
@@ -43,6 +45,7 @@ struct ReportPaginator {
         let allInProcessForGraph = (auditados + otros).filter { $0.currentOperacionLog?.operacion != .empaque && $0.currentOperacionLog?.operacion != nil }
         let groupedByOperationForGraph = Dictionary(grouping: allInProcessForGraph, by: { $0.currentOperacionLog!.operacion })
         let operationsData = operationOrder.map { (operacion: $0.rawValue, count: groupedByOperationForGraph[$0]?.count ?? 0) }
+   
         
         while !remainingPackaged.isEmpty || !remainingProcess.isEmpty {
             var pagePackaged: [CodigoBarras] = []
@@ -188,3 +191,4 @@ struct ReportPaginator {
         return pages
     }
 }
+
