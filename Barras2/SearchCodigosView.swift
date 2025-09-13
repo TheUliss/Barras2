@@ -12,21 +12,35 @@ struct SearchCodigosView: View {
     @State private var showingDetail = false
     @State private var showingSearchInfo = false
     
-    // NUEVO: Agregar FocusState para controlar el teclado
+    // NUEVO: Estados adicionales para gestión mejorada de edición
+    @State private var showingChangeDateSheet = false
+    @State private var codigoToChangeDate: CodigoBarras?
+    @State private var newDateForCodigo = Date()
+    @State private var refreshID = UUID()
+    
     @FocusState private var isSearchFieldFocused: Bool
     
-    // Computed property para códigos filtrados (SIN CAMBIOS)
+    // Estado para activar el filtro de duplicados
+    @State private var isFilteringDuplicates = false
+
+    // La propiedad ahora considera el filtro de duplicados
     var filteredCodigos: [CodigoBarras] {
+        // 1. Determinar la lista base: todos los códigos o solo los duplicados.
+        let baseList = isFilteringDuplicates
+            ? dataManager.codigos.filter { duplicatedCodigos.contains($0.codigo) }
+            : dataManager.codigos
+
+        // 2. Si no hay texto de búsqueda, devolver la lista base ordenada.
         if searchText.isEmpty {
-            return dataManager.codigos.sorted { $0.fechaCreacion > $1.fechaCreacion }
+            return baseList.sorted { $0.fechaCreacion > $1.fechaCreacion }
         }
         
-        return dataManager.codigos.filter { codigo in
+        // 3. Si hay texto, filtrar la lista base.
+        return baseList.filter { codigo in
             matchesCodigo(codigo.codigo, searchText: searchText)
         }.sorted { $0.fechaCreacion > $1.fechaCreacion }
     }
     
-    // Propiedad para detectar duplicados (SIN CAMBIOS)
     var duplicatedCodigos: Set<String> {
         let counts = dataManager.codigos.reduce(into: [String: Int]()) { $0[$1.codigo, default: 0] += 1 }
         return Set(counts.filter { $0.value > 1 }.keys)
@@ -35,7 +49,7 @@ struct SearchCodigosView: View {
     var body: some View {
         NavigationView {
             VStack {
-                // MARK: - Search Bar MODIFICADO para ocultar teclado
+                // MARK: - Search Bar
                 VStack(spacing: 8) {
                     HStack {
                         Image(systemName: "magnifyingglass")
@@ -44,62 +58,38 @@ struct SearchCodigosView: View {
                         TextField("Buscar por últimas 3 o 4 cifras...", text: $searchText)
                             .textFieldStyle(RoundedBorderTextFieldStyle())
                             .keyboardType(.numberPad)
-                            .focused($isSearchFieldFocused) // NUEVO: Conectar con FocusState
-                            .onSubmit {
-                                // NUEVO: Ocultar teclado al presionar "buscar"
-                                hideKeyboard()
-                            }
+                            .focused($isSearchFieldFocused)
+                            .onSubmit(hideKeyboard)
                         
-                        // NUEVO: Botón para ocultar teclado cuando está activo
                         if isSearchFieldFocused {
-                            Button("Hecho") {
-                                hideKeyboard()
-                            }
-                            .foregroundColor(.blue)
-                            .fontWeight(.medium)
+                            Button("Hecho") { hideKeyboard() }
+                                .foregroundColor(.blue)
+                                .fontWeight(.medium)
                         } else if !searchText.isEmpty {
-                            Button("Limpiar") {
-                                searchText = ""
-                            }
-                            .foregroundColor(.blue)
+                            Button("Limpiar") { searchText = "" }
+                                .foregroundColor(.blue)
                         }
                         
-                        Button(action: {
-                            showingSearchInfo.toggle()
-                        }) {
+                        Button(action: { showingSearchInfo.toggle() }) {
                             Image(systemName: "info.circle")
                                 .foregroundColor(.blue)
                         }
                     }
                     .padding(.horizontal)
                     
-                    // Mostrar info de búsqueda si está activada (SIN CAMBIOS)
                     if showingSearchInfo {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("📋 Formato de código: 12345678T-01-000")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text("🔍 Busca por:")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.secondary)
-                            Text("• Últimas 3 cifras: 000")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text("• Últimas 4 caracteres: 678T")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                            Text("📋 Formato de código: 12345678T-01-000").font(.caption).foregroundColor(.secondary)
+                            Text("🔍 Busca por:").font(.caption).fontWeight(.semibold).foregroundColor(.secondary)
+                            Text("• Últimas 3 cifras: 000").font(.caption).foregroundColor(.secondary)
+                            Text("• Últimas 4 caracteres: 678T").font(.caption).foregroundColor(.secondary)
                         }
-                        .padding(.horizontal)
-                        .padding(.vertical, 8)
-                        .background(Color.blue.opacity(0.1))
-                        .cornerRadius(8)
-                        .padding(.horizontal)
+                        .padding(.horizontal).padding(.vertical, 8).background(Color.blue.opacity(0.1)).cornerRadius(8).padding(.horizontal)
                     }
                 }
                 .padding(.top)
                 
-                // MARK: - Results Header (SIN CAMBIOS)
+                // MARK: - Results Header
                 HStack {
                     Text("Resultados: \(filteredCodigos.count)")
                         .font(.headline)
@@ -116,65 +106,23 @@ struct SearchCodigosView: View {
                 .padding(.horizontal)
                 .padding(.top, 8)
                 
-                // MARK: - Results List (SIN CAMBIOS PERO AGREGAMOS GESTURE)
-                if filteredCodigos.isEmpty && !searchText.isEmpty {
+                // MARK: - Results List
+                if filteredCodigos.isEmpty && (!searchText.isEmpty || isFilteringDuplicates) {
                     VStack(spacing: 16) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 50))
-                            .foregroundColor(.gray)
-                        
-                        Text("No se encontraron códigos")
-                            .font(.title2)
-                            .fontWeight(.medium)
-                            .foregroundColor(.primary)
-                        
-                        Text("Verifica que el término de búsqueda sea correcto")
-                            .font(.body)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                        
-                        // Sugerencias de búsqueda
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("💡 Ejemplos de búsqueda:")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                            
-                            Text("• Para código '12345678T-01-000' → busca: '000'")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            
-                            Text("• Para código '12345678T-01-000' → busca: '678T'")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding()
-                        .background(Color.orange.opacity(0.1))
-                        .cornerRadius(12)
+                        Image(systemName: "magnifyingglass").font(.system(size: 50)).foregroundColor(.gray)
+                        Text("No se encontraron códigos").font(.title2).fontWeight(.medium)
+                        Text("Verifica los filtros o el término de búsqueda").font(.body).foregroundColor(.secondary).multilineTextAlignment(.center)
                     }
                     .padding()
-                    
                     Spacer()
-                    
-                } else if filteredCodigos.isEmpty && searchText.isEmpty {
-                    // Estado vacío cuando no hay códigos
+                } else if dataManager.codigos.isEmpty {
                     VStack(spacing: 16) {
-                        Image(systemName: "barcode.viewfinder")
-                            .font(.system(size: 50))
-                            .foregroundColor(.gray)
-                        
-                        Text("No hay códigos escaneados")
-                            .font(.title2)
-                            .fontWeight(.medium)
-                            .foregroundColor(.primary)
-                        
-                        Text("Los códigos escaneados aparecerán aquí")
-                            .font(.body)
-                            .foregroundColor(.secondary)
+                        Image(systemName: "barcode.viewfinder").font(.system(size: 50)).foregroundColor(.gray)
+                        Text("No hay códigos escaneados").font(.title2).fontWeight(.medium)
+                        Text("Los códigos que escanees aparecerán aquí").font(.body).foregroundColor(.secondary)
                     }
                     .padding()
-                    
                     Spacer()
-                    
                 } else {
                     List {
                         ForEach(filteredCodigos) { codigo in
@@ -184,103 +132,153 @@ struct SearchCodigosView: View {
                                 searchText: searchText
                             )
                             .onTapGesture {
-                                // NUEVO: Ocultar teclado al tocar una fila
                                 hideKeyboard()
                                 selectedCodigo = codigo
                                 showingDetail = true
                             }
+                            // NUEVO: Menú contextual mejorado
+                            .contextMenu {
+                                Button(action: {
+                                    hideKeyboard()
+                                    selectedCodigo = codigo
+                                    showingDetail = true
+                                }) {
+                                    Label("Ver Detalles", systemImage: "info.circle")
+                                }
+                                
+                                Button(action: {
+                                    UIPasteboard.general.string = codigo.codigo
+                                    let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                                    impactFeedback.impactOccurred()
+                                }) {
+                                    Label("Copiar Código", systemImage: "doc.on.doc")
+                                }
+                                
+                                Button(action: {
+                                    hideKeyboard()
+                                    codigoToChangeDate = codigo
+                                    newDateForCodigo = codigo.fechaCreacion
+                                    showingChangeDateSheet = true
+                                }) {
+                                    Label("Cambiar Fecha", systemImage: "calendar")
+                                }
+                            }
                             .onLongPressGesture {
                                 UIPasteboard.general.string = codigo.codigo
-                                // Haptic feedback
                                 let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
                                 impactFeedback.impactOccurred()
                             }
                         }
-                        .onDelete { offsets in
-                            deleteCodigos(at: offsets)
-                        }
+                        .onDelete(perform: deleteCodigos)
                     }
                     .listStyle(PlainListStyle())
-                    // NUEVO: Gesto para ocultar teclado al hacer scroll
-                    .simultaneousGesture(
-                        DragGesture()
-                            .onChanged { _ in
-                                if isSearchFieldFocused {
-                                    hideKeyboard()
-                                }
-                            }
-                    )
+                    .simultaneousGesture(DragGesture().onChanged { _ in if isSearchFieldFocused { hideKeyboard() } })
                 }
             }
-            .navigationTitle("Buscar Códigos")
+            .id(refreshID) // NUEVO: Para forzar actualización cuando sea necesario
+            .navigationTitle(isFilteringDuplicates ? "Buscar Duplicados" : "Buscar Códigos")
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    Toggle(isOn: $isFilteringDuplicates) {
+                        Image(systemName: "doc.on.doc.fill")
+                            .foregroundColor(isFilteringDuplicates ? .blue : .primary)
+                    }
+                    .toggleStyle(.button)
+                    .disabled(duplicatedCodigos.isEmpty)
+                    
                     EditButton()
                         .disabled(filteredCodigos.isEmpty)
-                    }
+                }
             }
-            .onTapGesture {
-                hideKeyboard()
-            }
-            // NUEVO: Detectar cuando aparece/desaparece la vista
-            .onAppear {
-                // Opcional: enfocar automáticamente el campo de búsqueda
-                // isSearchFieldFocused = true
-            }
+            .onTapGesture(perform: hideKeyboard)
+            // MODIFICADO: Usar el wrapper correcto para consistencia
             .sheet(isPresented: $showingDetail) {
-                if let codigo = selectedCodigo {
-                    // La hoja presenta la vista de detalles con el código guardado
-                    CodigoDetailView(
-                        codigo: codigo,
-                        isNew: false
-                    ) { updatedCodigo in
+                CodigoDetailViewWrapper(
+                    codigo: selectedCodigo,
+                    onSave: { updatedCodigo in
                         dataManager.updateCodigo(updatedCodigo)
+                        refreshID = UUID()
                     }
-                    .environmentObject(dataManager)
+                )
+            }
+            // NUEVO: Sheet para cambio de fecha
+            .sheet(isPresented: $showingChangeDateSheet) {
+                changeDateSheetView
+            }
+        }
+    }
+    
+    // NUEVO: Vista para el sheet de cambio de fecha
+    private var changeDateSheetView: some View {
+        NavigationView {
+            VStack(spacing: 20) {
+                if let codigo = codigoToChangeDate {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Cambiar Fecha de Creación").font(.title2).fontWeight(.bold)
+                        Text("Código: \(codigo.codigo)").font(.headline).foregroundColor(.blue)
+                        Text("Fecha actual: \(codigo.fechaCreacion, style: .date)").font(.subheadline).foregroundColor(.secondary)
+                    }
+                    .padding().background(Color(.systemGray6)).cornerRadius(10)
+                }
+                DatePicker("Nueva fecha", selection: $newDateForCodigo, displayedComponents: [.date])
+                    .datePickerStyle(GraphicalDatePickerStyle())
+                Spacer()
+            }
+            .padding()
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancelar") { showingChangeDateSheet = false }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Guardar") { changeDateForCodigo() }.fontWeight(.semibold)
                 }
             }
         }
     }
     
-    // MARK: - Helper Methods (SIN CAMBIOS + NUEVA FUNCIÓN)
+    // NUEVO: Función para cambiar la fecha
+    private func changeDateForCodigo() {
+        guard let codigo = codigoToChangeDate else { return }
+        
+        let updatedCodigo = CodigoBarras(
+            id: codigo.id,
+            codigo: codigo.codigo,
+            fechaCreacion: Calendar.current.startOfDay(for: newDateForCodigo),
+            articulo: codigo.articulo,
+            auditado: codigo.auditado,
+            cantidadPuntas: codigo.cantidadPuntas,
+            fechaEmbarque: codigo.fechaEmbarque,
+            fechaModificacion: Date(),
+            operacionHistory: codigo.operacionHistory
+        )
+        
+        dataManager.updateCodigo(updatedCodigo)
+        refreshID = UUID()
+        showingChangeDateSheet = false
+    }
     
-    // NUEVA FUNCIÓN: Para ocultar el teclado
     private func hideKeyboard() {
         isSearchFieldFocused = false
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
     
-    /// Función para verificar si un código coincide con el texto de búsqueda (SIN CAMBIOS)
     private func matchesCodigo(_ codigo: String, searchText: String) -> Bool {
         let cleanSearchText = searchText.trimmingCharacters(in: .whitespaces)
-        
         guard !cleanSearchText.isEmpty else { return true }
         
-        // Separar el código por guiones
         let components = codigo.split(separator: "-")
-        
         guard components.count >= 3 else { return false }
         
-        let firstPart = String(components[0])  // "12345678T"
-        let lastPart = String(components[2])   // "000"
+        let firstPart = String(components[0])
+        let lastPart = String(components[2])
         
-        // Opción 1: Buscar en las últimas 3 cifras (última parte)
-        if lastPart.contains(cleanSearchText) {
-            return true
-        }
-        
-        // Opción 2: Buscar en las últimas 4 cifras de la primera parte
+        if lastPart.contains(cleanSearchText) { return true }
         if firstPart.count >= 4 {
             let lastFourChars = String(firstPart.suffix(4))
-            if lastFourChars.contains(cleanSearchText) {
-                return true
-            }
+            if lastFourChars.contains(cleanSearchText) { return true }
         }
-        
-        // Opción 3: Coincidencia exacta con el código completo (fallback)
-        if codigo.lowercased().contains(cleanSearchText.lowercased()) {
-            return true
-        }
+        if codigo.lowercased().contains(cleanSearchText.lowercased()) { return true }
         
         return false
     }
@@ -290,6 +288,14 @@ struct SearchCodigosView: View {
             let codigo = filteredCodigos[index]
             dataManager.deleteCodigo(codigo)
         }
+        
+        // Si después de borrar ya no hay duplicados, se desactiva el filtro
+        if isFilteringDuplicates && duplicatedCodigos.isEmpty {
+            isFilteringDuplicates = false
+        }
+        
+        // NUEVO: Actualizar la vista
+        refreshID = UUID()
     }
 }
 
@@ -415,11 +421,11 @@ struct SearchResultRow: View {
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 4)
-        .background(backgroundColorForCode) // MANTENIDO - SIN CAMBIOS
+        .background(backgroundColorForCode)
         .cornerRadius(8)
     }
     
-    // MARK: - Computed Properties (SIN CAMBIOS - mantener todas las funciones existentes)
+    // MARK: - Computed Properties
     
     /// Color de fondo según el estado del código
     private var backgroundColorForCode: Color {
@@ -457,7 +463,7 @@ struct SearchResultRow: View {
     }
 }
 
-// MARK: - Preview (SIN CAMBIOS)
+// MARK: - Preview
 struct SearchCodigosView_Previews: PreviewProvider {
     static var previews: some View {
         SearchCodigosView()

@@ -1,6 +1,15 @@
+
+
 import Foundation
 import SwiftUI
 
+// NUEVA ESTRUCTURA DE DATOS para el gráfico.
+struct AggregatedOperationData: Identifiable {
+    let id = UUID()
+    let operacion: String
+    let totalCount: Int
+    let auditedCount: Int
+}
 
 struct ReportPageData {
     // Info de la página
@@ -20,18 +29,19 @@ struct ReportPageData {
     let totalCodigosDelDia: Int
     let totalAuditadosDelDia: Int
     let totalEmpacadosDelDia: Int
-    let operationsDataDelDia: [(operacion: String, count: Int)]
-    
+    // Se usa la nueva estructura de datos.
+    let operationsDataDelDia: [AggregatedOperationData]
 }
 
 struct ReportPaginator {
+    // Ajusta el valor según sea necesario para evitar el desperdicio de espacio.
+    static let firstPageAvailableLines = 65
+    
     static func paginate(empacados: [CodigoBarras], auditados: [CodigoBarras], otros: [CodigoBarras], date: Date, settings: SettingsManager) -> [ReportPageData] {
         
         let codesInProcess = (auditados + otros).sorted { $0.codigo < $1.codigo }
         
-        // Capacidades más realistas basadas en espacio disponible
-        let firstPageAvailableLines = 50  // Líneas disponibles en primera página
-        let subsequentPageAvailableLines = 50  // Líneas disponibles en páginas siguientes
+        let subsequentPageAvailableLines = 50
         
         var pages: [ReportPageData] = []
         var remainingPackaged = empacados
@@ -39,156 +49,117 @@ struct ReportPaginator {
         
         var currentPage = 1
         
-        // Calcular datos de resumen una sola vez
+        // --- INICIO DE LA LÓGICA MODIFICADA PARA EL GRÁFICO ---
         let totalCodigosDelDia = empacados.count + codesInProcess.count
         let operationOrder: [Operacion] = [.ribonizado, .ensamble, .pulido, .limpGeo, .armado, .etiquetas, .polaridad, .prueba, .limpieza]
-        let allInProcessForGraph = (auditados + otros).filter { $0.currentOperacionLog?.operacion != .empaque && $0.currentOperacionLog?.operacion != nil }
-        let groupedByOperationForGraph = Dictionary(grouping: allInProcessForGraph, by: { $0.currentOperacionLog!.operacion })
-        let operationsData = operationOrder.map { (operacion: $0.rawValue, count: groupedByOperationForGraph[$0]?.count ?? 0) }
-   
+        let allInProcessForGraph = auditados + otros
         
+        var operationsData: [AggregatedOperationData] = []
+        
+        let groupedByOperation = Dictionary(grouping: allInProcessForGraph) { $0.currentOperacionLog?.operacion ?? .limpieza }
+
+        for operacion in operationOrder {
+            if let codes = groupedByOperation[operacion], !codes.isEmpty {
+                let total = codes.count
+                let auditadosEnOperacion = codes.filter { $0.auditado }.count
+                
+                operationsData.append(AggregatedOperationData(operacion: operacion.rawValue, totalCount: total, auditedCount: auditadosEnOperacion))
+            } else {
+                // Opcional: Añadir operaciones sin códigos para que aparezcan en el eje X.
+                operationsData.append(AggregatedOperationData(operacion: operacion.rawValue, totalCount: 0, auditedCount: 0))
+            }
+        }
+        // --- FIN DE LA LÓGICA MODIFICADA ---
+   
         while !remainingPackaged.isEmpty || !remainingProcess.isEmpty {
+            // ... (El resto de la lógica de paginación que corregimos anteriormente no cambia) ...
             var pagePackaged: [CodigoBarras] = []
             var pageProcess: [CodigoBarras] = []
             
-            let availableLines = currentPage == 1 ? firstPageAvailableLines : subsequentPageAvailableLines
-            var usedLines = 0
-            
-            // Espacio para sección de empacados (si es primera página, reservar espacio para header)
+            let totalPageLines = currentPage == 1 ? firstPageAvailableLines : subsequentPageAvailableLines
             let headerLines = currentPage == 1 ? 15 : 5
-            
-            // Primero agregar códigos empacados
+            let contentBudget = totalPageLines - headerLines
+            var usedContentLines = 0
+
             if !remainingPackaged.isEmpty {
                 let packagedGrouped = Dictionary(grouping: remainingPackaged) { $0.articulo?.nombre ?? "Sin Artículo" }
-                var packagedLinesUsed = 0
-                
                 for articleName in packagedGrouped.keys.sorted() {
-                    let codes = packagedGrouped[articleName]!
-                    let linesForArticle = 2 + codes.count  // 1 línea para título + 1 para subtotal + 1 por código
-                    
-                    if usedLines + linesForArticle + headerLines <= availableLines {
+                    guard let codes = packagedGrouped[articleName] else { continue }
+                    let linesForArticle = 2 + codes.count
+                    if usedContentLines + linesForArticle <= contentBudget {
                         pagePackaged.append(contentsOf: codes)
-                        packagedLinesUsed += linesForArticle
-                        usedLines += linesForArticle
+                        usedContentLines += linesForArticle
                     } else {
                         break
                     }
                 }
-                
-                // Remover los códigos que se agregaron a esta página
-                remainingPackaged.removeAll { code in
-                    pagePackaged.contains(where: { $0.id == code.id })
-                }
+                remainingPackaged.removeAll { code in pagePackaged.contains { $0.id == code.id } }
             }
             
-            // Luego agregar códigos en proceso si todavía hay espacio
-            if !remainingProcess.isEmpty && usedLines + headerLines < availableLines {
-                let processGroupedByOperation = Dictionary(grouping: remainingProcess) {
-                    $0.currentOperacionLog?.operacion ?? .limpieza
-                }
-                
-                var processLinesUsed = 0
-                
+            if !remainingProcess.isEmpty && usedContentLines < contentBudget {
+                let processGroupedByOperation = Dictionary(grouping: remainingProcess) { $0.currentOperacionLog?.operacion ?? .limpieza }
                 for operacion in operationOrder {
-                    guard let codesForOperation = processGroupedByOperation[operacion], !codesForOperation.isEmpty else {
-                        continue
-                    }
-                    
-                    let operationGroupedByArticle = Dictionary(grouping: codesForOperation) {
-                        $0.articulo?.nombre ?? "Sin Artículo"
-                    }
-                    
-                    let linesForOperationHeader = 2  // Título de operación + línea divisoria
-                    
-                    if usedLines + linesForOperationHeader + headerLines > availableLines {
-                        break
-                    }
-                    
-                    usedLines += linesForOperationHeader
-                    processLinesUsed += linesForOperationHeader
-                    
+                    guard let codesForOperation = processGroupedByOperation[operacion], !codesForOperation.isEmpty else { continue }
+                    let operationGroupedByArticle = Dictionary(grouping: codesForOperation) { $0.articulo?.nombre ?? "Sin Artículo" }
+                    let linesForOperationHeader = 2
+                    if usedContentLines + linesForOperationHeader > contentBudget { break }
+                    var addedCodesInThisOperation = false
                     for articleName in operationGroupedByArticle.keys.sorted() {
-                        let codesForArticle = operationGroupedByArticle[articleName]!
-                        let linesForArticle = 3 + codesForArticle.count  // 2 líneas para artículo + 1 para subtotal + 1 por código
-                        
-                        if usedLines + linesForArticle <= availableLines {
+                        guard let codesForArticle = operationGroupedByArticle[articleName] else { continue }
+                        let linesForArticle = 3 + codesForArticle.count
+                        if usedContentLines + (addedCodesInThisOperation ? 0 : linesForOperationHeader) + linesForArticle <= contentBudget {
+                            if !addedCodesInThisOperation {
+                                usedContentLines += linesForOperationHeader
+                                addedCodesInThisOperation = true
+                            }
                             pageProcess.append(contentsOf: codesForArticle)
-                            usedLines += linesForArticle
-                            processLinesUsed += linesForArticle
+                            usedContentLines += linesForArticle
                         } else {
                             break
                         }
                     }
                 }
-                
-                // Remover los códigos que se agregaron a esta página
-                remainingProcess.removeAll { code in
-                    pageProcess.contains(where: { $0.id == code.id })
-                }
+                remainingProcess.removeAll { code in pageProcess.contains { $0.id == code.id } }
             }
             
-            // Crear la página solo si tiene contenido
             if !pagePackaged.isEmpty || !pageProcess.isEmpty {
                 let pageData = ReportPageData(
-                    pageNumber: currentPage,
-                    totalPages: 0, // Se actualizará al final
-                    date: date,
-                    isFirstPage: currentPage == 1,
-                    logoImageData: settings.logoImageData,
-                    nombreRealizador: settings.nombreRealizador,
-                    turno: settings.turnoSeleccionado,
-                    codigosEmpacadosDeLaPagina: pagePackaged,
-                    codigosEnProcesoDeLaPagina: pageProcess,
-                    totalCodigosDelDia: totalCodigosDelDia,
-                    totalAuditadosDelDia: auditados.count,
-                    totalEmpacadosDelDia: empacados.count,
-                    operationsDataDelDia: operationsData
+                    pageNumber: currentPage, totalPages: 0, date: date, isFirstPage: currentPage == 1,
+                    logoImageData: settings.logoImageData, nombreRealizador: settings.nombreRealizador, turno: settings.turnoSeleccionado,
+                    codigosEmpacadosDeLaPagina: pagePackaged, codigosEnProcesoDeLaPagina: pageProcess,
+                    totalCodigosDelDia: totalCodigosDelDia, totalAuditadosDelDia: auditados.count,
+                    totalEmpacadosDelDia: empacados.count, operationsDataDelDia: operationsData
                 )
                 pages.append(pageData)
                 currentPage += 1
+            } else {
+                break
             }
         }
         
-        // Actualizar el total de páginas
         let totalPages = pages.count
         for i in 0..<pages.count {
+            let oldPage = pages[i]
             pages[i] = ReportPageData(
-                pageNumber: pages[i].pageNumber,
-                totalPages: totalPages,
-                date: pages[i].date,
-                isFirstPage: pages[i].isFirstPage,
-                logoImageData: pages[i].logoImageData,
-                nombreRealizador: pages[i].nombreRealizador,
-                turno: pages[i].turno,
-                codigosEmpacadosDeLaPagina: pages[i].codigosEmpacadosDeLaPagina,
-                codigosEnProcesoDeLaPagina: pages[i].codigosEnProcesoDeLaPagina,
-                totalCodigosDelDia: pages[i].totalCodigosDelDia,
-                totalAuditadosDelDia: pages[i].totalAuditadosDelDia,
-                totalEmpacadosDelDia: pages[i].totalEmpacadosDelDia,
-                operationsDataDelDia: pages[i].operationsDataDelDia
+                pageNumber: oldPage.pageNumber, totalPages: totalPages, date: oldPage.date, isFirstPage: oldPage.isFirstPage,
+                logoImageData: oldPage.logoImageData, nombreRealizador: oldPage.nombreRealizador, turno: oldPage.turno,
+                codigosEmpacadosDeLaPagina: oldPage.codigosEmpacadosDeLaPagina,
+                codigosEnProcesoDeLaPagina: oldPage.codigosEnProcesoDeLaPagina,
+                totalCodigosDelDia: oldPage.totalCodigosDelDia, totalAuditadosDelDia: oldPage.totalAuditadosDelDia,
+                totalEmpacadosDelDia: oldPage.totalEmpacadosDelDia, operationsDataDelDia: oldPage.operationsDataDelDia
             )
         }
         
-        // Si no hay páginas, crear una vacía
         if pages.isEmpty {
             pages.append(ReportPageData(
-                pageNumber: 1,
-                totalPages: 1,
-                date: date,
-                isFirstPage: true,
-                logoImageData: settings.logoImageData,
-                nombreRealizador: settings.nombreRealizador,
-                turno: settings.turnoSeleccionado,
-                codigosEmpacadosDeLaPagina: [],
-                codigosEnProcesoDeLaPagina: [],
-                totalCodigosDelDia: totalCodigosDelDia,
-                totalAuditadosDelDia: auditados.count,
-                totalEmpacadosDelDia: empacados.count,
-                operationsDataDelDia: operationsData
+                pageNumber: 1, totalPages: 1, date: date, isFirstPage: true,
+                logoImageData: settings.logoImageData, nombreRealizador: settings.nombreRealizador, turno: settings.turnoSeleccionado,
+                codigosEmpacadosDeLaPagina: [], codigosEnProcesoDeLaPagina: [],
+                totalCodigosDelDia: totalCodigosDelDia, totalAuditadosDelDia: auditados.count,
+                totalEmpacadosDelDia: empacados.count, operationsDataDelDia: operationsData
             ))
         }
         
         return pages
     }
 }
-

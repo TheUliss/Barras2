@@ -94,24 +94,6 @@ struct OperacionLog: Identifiable, Codable, Hashable {
     var timestamp: Date
 }
 
-
-/*// Agrega esto en tu struct ReportPageData o en el mismo archivo
-struct OperationChartData: Identifiable {
-    let id = UUID()
-    let operacion: String
-    let count: Int
-    let status: String // "Auditado" o "No Auditado"
-    
-    // Inicializador conveniente
-    init(operacion: String, count: Int, status: String) {
-        self.operacion = operacion
-        self.count = count
-        self.status = status
-    }
-}*/
-// Agrega esto al principio del archivo, antes de struct ReportPageData
-
-
 // MARK: - Extensiones para CodigoBarras
 extension CodigoBarras {
     /// Cantidad de puntas faltantes para completar el artículo
@@ -174,6 +156,5 @@ extension CodigoBarras {
         }
     }
     
-   
 }
 

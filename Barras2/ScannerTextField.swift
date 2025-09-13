@@ -405,6 +405,17 @@ struct DebugScannerView: View {
                     }
                 )
             }
+            .sheet(isPresented: $showingBatchList) {
+                BatchListView(
+                    batchCodigos: $batchCodigos,
+                    selectedOperacion: selectedBatchOperacion ?? .ribonizado,
+                    dataManager: dataManager,
+                    onFinish: {
+                        batchCodigos.removeAll()
+                        selectedBatchOperacion = nil
+                    }
+                )
+            }
         }
     }
     
@@ -436,7 +447,18 @@ struct DebugScannerView: View {
                             .clipShape(Circle())
                     }
                     
-                    modeIndicator
+                    //modeIndicator
+                    // MARK: - CORRECCIÓN 2: Agregar NavigationLink en el header de DebugScannerView
+                    // En la sección headerView de DebugScannerView, reemplazar el NavigationLink existente por:
+
+                    NavigationLink(destination: ExcelStyleBatchView()) {
+                        Image(systemName: "tablecells")
+                            .font(.title3)
+                            .foregroundColor(.green.opacity(0.7))
+                            .padding(8)
+                            .background(Color.green.opacity(0.1))
+                            .clipShape(Circle())
+                    }
                 }
             }
         }

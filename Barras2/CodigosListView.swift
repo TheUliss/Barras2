@@ -28,6 +28,9 @@ struct CodigosListView: View {
     @State private var showingChangeDateSheet = false
     @State private var codigoToChangeDate: CodigoBarras?
     @State private var newDateForCodigo = Date()
+    
+    // NUEVO: Estado para activar el filtro de duplicados
+    @State private var isFilteringDuplicates = false
 
     var groupedCodigos: [Date: [CodigoBarras]] {
         let groupedByDate = Dictionary(grouping: dataManager.codigos) { codigo in
@@ -45,80 +48,92 @@ struct CodigosListView: View {
         return Set(counts.filter { $0.value > 1 }.keys)
     }
     
+    // NUEVO: Lista computada que contiene solo los códigos duplicados
+    var filteredDuplicateList: [CodigoBarras] {
+        dataManager.codigos
+            .filter { duplicatedCodigos.contains($0.codigo) }
+            .sorted { $0.codigo < $1.codigo }
+    }
+    
     var body: some View {
         NavigationView {
             List {
-                ForEach(sortedGroupedKeys, id: \.self) { date in
-                    DisclosureGroup(
-                        content: {
-                            ForEach(groupedCodigos[date]!) { codigo in
-                                CodigoRowView(
-                                    codigo: codigo,
-                                    isDuplicate: duplicatedCodigos.contains(codigo.codigo)
-                                )
-                                .onTapGesture {
-                                    selectedCodigo = codigo
-                                    showingDetail = true
-                                }
-                                .onLongPressGesture {
-                                    UIPasteboard.general.string = codigo.codigo
-                                }
-                                // NUEVO: Menú contextual para cambiar fecha
-                                .contextMenu {
-                                    Button(action: {
-                                        selectedCodigo = codigo
-                                        showingDetail = true
-                                    }) {
-                                        Label("Ver Detalles", systemImage: "info.circle")
-                                    }
-                                    
-                                    Button(action: {
-                                        UIPasteboard.general.string = codigo.codigo
-                                    }) {
-                                        Label("Copiar Código", systemImage: "doc.on.doc")
-                                    }
-                                    
-                                    Button(action: {
-                                        codigoToChangeDate = codigo
-                                        newDateForCodigo = codigo.fechaCreacion
-                                        showingChangeDateSheet = true
-                                    }) {
-                                        Label("Cambiar Fecha", systemImage: "calendar")
-                                    }
-                                }
+                // NUEVO: Lógica condicional para mostrar la vista normal o la filtrada
+                if isFilteringDuplicates {
+                    // --- VISTA FILTRADA (SOLO DUPLICADOS) ---
+                    Section(header: Text("Códigos Repetidos (\(filteredDuplicateList.count))")) {
+                        ForEach(filteredDuplicateList) { codigo in
+                            CodigoRowView(
+                                codigo: codigo,
+                                isDuplicate: true // Siempre es duplicado en esta vista
+                            )
+                            .onTapGesture {
+                                selectedCodigo = codigo
+                                showingDetail = true
                             }
-                            .onDelete { offsets in
-                                deleteCodigos(at: offsets, for: groupedCodigos[date]!)
+                            .onLongPressGesture {
+                                UIPasteboard.general.string = codigo.codigo
                             }
-                        },
-                        label: {
-                            HStack {
-                                Text(date, style: .date)
-                                    .font(.headline)
-                                    .fontWeight(.bold)
-                                Spacer()
-                                Text("(\(groupedCodigos[date]?.count ?? 0))")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                
-                                Button(action: {
-                                    selectedDateToDelete = date
-                                    showingDeleteDateAlert = true
-                                }) {
-                                    Image(systemName: "trash.circle.fill")
-                                        .foregroundColor(.red)
-                                        .font(.title3)
-                                }
-                                .buttonStyle(PlainButtonStyle())
+                            .contextMenu {
+                                commonContextMenu(for: codigo)
                             }
                         }
-                    )
+                        .onDelete(perform: deleteFilteredCodigos)
+                    }
+                } else {
+                    // --- VISTA NORMAL (AGRUPADA POR FECHA) ---
+                    ForEach(sortedGroupedKeys, id: \.self) { date in
+                        DisclosureGroup(
+                            content: {
+                                ForEach(groupedCodigos[date]!) { codigo in
+                                    CodigoRowView(
+                                        codigo: codigo,
+                                        isDuplicate: duplicatedCodigos.contains(codigo.codigo)
+                                    )
+                                    .onTapGesture {
+                                        selectedCodigo = codigo
+                                        showingDetail = true
+                                    }
+                                    .onLongPressGesture {
+                                        UIPasteboard.general.string = codigo.codigo
+                                    }
+                                    .contextMenu {
+                                        commonContextMenu(for: codigo)
+                                    }
+                                }
+                                .onDelete { offsets in
+                                    deleteCodigos(at: offsets, for: groupedCodigos[date]!)
+                                }
+                            },
+                            label: {
+                                HStack {
+                                    Text(date, style: .date)
+                                        .font(.headline)
+                                        .fontWeight(.bold)
+                                    Spacer()
+                                    Text("(\(groupedCodigos[date]?.count ?? 0))")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    
+                                    Button(action: {
+                                        selectedDateToDelete = date
+                                        showingDeleteDateAlert = true
+                                    }) {
+                                        Image(systemName: "trash.circle.fill")
+                                            .foregroundColor(.red)
+                                            .font(.title3)
+                                    }
+                                    .buttonStyle(PlainButtonStyle())
+                                }
+                            }
+                        )
+                    }
                 }
             }
             .id(refreshID)
-            .navigationTitle("Códigos (\(dataManager.codigos.count))")
+            // NUEVO: Título dinámico
+            .navigationTitle(isFilteringDuplicates ? "Duplicados (\(filteredDuplicateList.count))" : "Códigos (\(dataManager.codigos.count))")
             .toolbar {
-                // MODIFICADO: Se añade el botón para compartir
                 ToolbarItemGroup(placement: .navigationBarLeading) {
                     Button("Eliminar Todo") {
                         showingDeleteAllAlert = true
@@ -127,17 +142,25 @@ struct CodigosListView: View {
                     .disabled(dataManager.codigos.isEmpty)
                 }
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
-                                    Button {
-                                        // MODIFICADO: Esto ahora abre el selector de fechas
-                                        showingActionSheet = true
-                                    } label: {
-                                        Image(systemName: "square.and.arrow.up")
-                                    }
-                                    .disabled(dataManager.codigos.isEmpty)
+                    // NUEVO: Toggle para activar el filtro
+                    Toggle(isOn: $isFilteringDuplicates) {
+                        Image(systemName: "doc.on.doc.fill")
+                            .foregroundColor(isFilteringDuplicates ? .blue : .primary)
+                    }
+                    .toggleStyle(.button)
+                    .disabled(duplicatedCodigos.isEmpty)
 
-                                    EditButton()
+                    Button {
+                        showingActionSheet = true
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    .disabled(dataManager.codigos.isEmpty)
+
+                    EditButton()
                 }
             }
+            // ... (El resto de los .sheet, .alert y .confirmationDialog no cambia)
             .sheet(isPresented: $showingDetail) {
                 CodigoDetailViewWrapper(
                     codigo: selectedCodigo,
@@ -148,11 +171,9 @@ struct CodigosListView: View {
                     }
                 )
             }
-            // NUEVO: Hoja para presentar el ActivityView (compartir)
             .sheet(isPresented: $showingShareSheet) {
-                            ActivityView(activityItems: activityItems)
-                        }
-            // NUEVO: Hoja para cambiar la fecha de creación
+                ActivityView(activityItems: activityItems)
+            }
             .sheet(isPresented: $showingChangeDateSheet) {
                 NavigationView {
                     VStack(spacing: 20) {
@@ -161,11 +182,9 @@ struct CodigosListView: View {
                                 Text("Cambiar Fecha de Creación")
                                     .font(.title2)
                                     .fontWeight(.bold)
-                                
                                 Text("Código: \(codigo.codigo)")
                                     .font(.headline)
                                     .foregroundColor(.blue)
-                                
                                 Text("Fecha actual: \(codigo.fechaCreacion, style: .date)")
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
@@ -174,14 +193,12 @@ struct CodigosListView: View {
                             .background(Color(.systemGray6))
                             .cornerRadius(10)
                         }
-                        
                         DatePicker(
                             "Nueva fecha",
                             selection: $newDateForCodigo,
                             displayedComponents: [.date]
                         )
                         .datePickerStyle(GraphicalDatePickerStyle())
-                        
                         Spacer()
                     }
                     .padding()
@@ -193,7 +210,6 @@ struct CodigosListView: View {
                                 codigoToChangeDate = nil
                             }
                         }
-                        
                         ToolbarItem(placement: .navigationBarTrailing) {
                             Button("Guardar") {
                                 changeDateForCodigo()
@@ -203,33 +219,27 @@ struct CodigosListView: View {
                     }
                 }
             }
-            // MODIFICADO: Este diálogo ahora te permite elegir la fecha
-                        .confirmationDialog("Seleccionar Fecha para Reporte", isPresented: $showingActionSheet, titleVisibility: .visible) {
-                            ForEach(sortedGroupedKeys, id: \.self) { date in
-                                Button(date.formatted(date: .long, time: .omitted)) {
-                                    selectedDateForAction = date
-                                    // Aquí podríamos abrir otro menú o realizar una acción directa
-                                    // Para este ejemplo, vamos a generar ambos y que el usuario elija
-                                    // en el siguiente paso. Por simplicidad, lo haremos directo.
-                                    // Lo ideal es presentar un segundo menú aquí.
-                                }
-                            }
-                            Button("Cancelar", role: .cancel) {}
-                        }
-                                    // NUEVO: Un segundo confirmationDialog para elegir el tipo de reporte
-                                    .confirmationDialog("¿Qué tipo de reporte deseas generar?", isPresented: .constant(selectedDateForAction != nil), titleVisibility: .visible) {
-                                        Button("Resumen Rápido (Texto)") {
-                                            generateShareText(for: selectedDateForAction!)
-                                            selectedDateForAction = nil // Reset
-                                        }
-                                        Button("Reporte Completo (PDF)") {
-                                            generatePDFReport(for: selectedDateForAction!)
-                                            selectedDateForAction = nil // Reset
-                                        }
-                                        Button("Cancelar", role: .cancel) {
-                                            selectedDateForAction = nil // Reset
-                                        }
-                                    }
+            .confirmationDialog("Seleccionar Fecha para Reporte", isPresented: $showingActionSheet, titleVisibility: .visible) {
+                ForEach(sortedGroupedKeys, id: \.self) { date in
+                    Button(date.formatted(date: .long, time: .omitted)) {
+                        selectedDateForAction = date
+                    }
+                }
+                Button("Cancelar", role: .cancel) {}
+            }
+            .confirmationDialog("¿Qué tipo de reporte deseas generar?", isPresented: .constant(selectedDateForAction != nil), titleVisibility: .visible) {
+                Button("Resumen Rápido (Texto)") {
+                    generateShareText(for: selectedDateForAction!)
+                    selectedDateForAction = nil
+                }
+                Button("Reporte Completo (PDF)") {
+                    generatePDFReport(for: selectedDateForAction!)
+                    selectedDateForAction = nil
+                }
+                Button("Cancelar", role: .cancel) {
+                    selectedDateForAction = nil
+                }
+            }
             .alert("Eliminar Todos los Códigos", isPresented: $showingDeleteAllAlert) {
                 Button("Cancelar", role: .cancel) {}
                 Button("Eliminar Todo", role: .destructive) {
@@ -253,6 +263,31 @@ struct CodigosListView: View {
                     Text("¿Estás seguro de que quieres eliminar todos los códigos de esta fecha?")
                 }
             }
+        }
+    }
+    
+    // NUEVO: Se extrae el ContextMenu a una función para no repetir código
+    @ViewBuilder
+    private func commonContextMenu(for codigo: CodigoBarras) -> some View {
+        Button(action: {
+            selectedCodigo = codigo
+            showingDetail = true
+        }) {
+            Label("Ver Detalles", systemImage: "info.circle")
+        }
+        
+        Button(action: {
+            UIPasteboard.general.string = codigo.codigo
+        }) {
+            Label("Copiar Código", systemImage: "doc.on.doc")
+        }
+        
+        Button(action: {
+            codigoToChangeDate = codigo
+            newDateForCodigo = codigo.fechaCreacion
+            showingChangeDateSheet = true
+        }) {
+            Label("Cambiar Fecha", systemImage: "calendar")
         }
     }
     
@@ -376,6 +411,19 @@ struct CodigosListView: View {
     private func deleteCodigos(at offsets: IndexSet, for group: [CodigoBarras]) {
         offsets.forEach { index in
             dataManager.deleteCodigo(group[index])
+        }
+    }
+    
+    private func deleteFilteredCodigos(at offsets: IndexSet) {
+        let codesToDelete = offsets.map { filteredDuplicateList[$0] }
+        codesToDelete.forEach { codigo in
+            dataManager.deleteCodigo(codigo)
+        }
+
+        // NUEVO: Comprobar el estado después de borrar.
+        // Si ya no quedan duplicados, desactivamos el filtro.
+        if duplicatedCodigos.isEmpty {
+            isFilteringDuplicates = false
         }
     }
     
